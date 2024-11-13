@@ -1,55 +1,24 @@
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
-from openai import AzureOpenAI
-import os
-import logging
+from flask import Flask, render_template, request, jsonify
+from transformers import pipeline
 
 app = Flask(__name__)
-CORS(app)
 
-logging.basicConfig(level=logging.DEBUG)
+# Initialize the summarizer
+summarizer = pipeline("summarization", model="t5-small")
 
-endpoint = os.getenv("ENDPOINT_URL", "https://ai-mehaknauman6ai9219481888056792.openai.azure.com/")
-deployment = os.getenv("DEPLOYMENT_NAME", "gpt-35-turbo")
-subscription_key = os.getenv("AZURE_OPENAI_API_KEY", "9a38b6fa427a45eaba28ffa8bf4d88a6")
-
-client = AzureOpenAI(
-    azure_endpoint=endpoint,
-    api_key=subscription_key,
-    api_version="2024-05-01-preview",
-)
-
-@app.after_request
-def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-    return response
-
+# Route for the main page
 @app.route('/')
 def index():
-    return send_from_directory('.', 'email summariser.html')
+    return render_template('index.html')  # Render your front-end HTML file
 
+# Route for the summarization functionality
 @app.route('/summarize', methods=['POST'])
 def summarize():
-    try:
-        data = request.get_json()
-        email_text = data['email']
-        
-        response = client.chat.completions.create(
-            model=deployment,
-            messages=[
-                {"role": "system", "content": "You are an AI that summarizes emails."},
-                {"role": "user", "content": email_text}
-            ],
-            max_tokens=100
-        )
-        
-        summary = response.choices[0].message['content'].strip()
-        return jsonify({'summary': summary})
-    except Exception as e:
-        app.logger.error('Error during summarization: %s', e)
-        return jsonify({'error': str(e)}), 500
+    email_body = request.form.get('email_body')  # Get email text from the form
+    if email_body and email_body.strip():
+        summary = summarizer(email_body, max_length=50, min_length=25, do_sample=False)
+        return jsonify({'summary': summary[0]['summary_text']})
+    return jsonify({'error': 'Please enter some text.'})
 
 if __name__ == '__main__':
     app.run(debug=True)
